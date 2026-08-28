@@ -5,6 +5,8 @@
   <figcaption>RAG architecture with Langchain components.</figcaption>
 </div>
 
+Working URL : (https://rag-chatbot-docs.streamlit.app/)
+
 ## Project Overview <a name="overview"></a>
 
 Although Large Language Models (LLMs) are powerful and capable of generating creative content, they can produce outdated or incorrect information as they are trained on static data. To overcome this limitation, Retrieval Augmented Generation (RAG) systems can be used to connect the LLM to external data and obtain more reliable answers.
