@@ -1,0 +1,23 @@
+# Environment variables
+.env
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+langchain_env/
+langchainenv/
+
+# Vector stores and temporary data
+data/tmp/*
+data/vector_stores/*
+!data/tmp/.gitkeep
+!data/vector_stores/.gitkeep
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints

@@ -8,6 +8,10 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 import os, glob
 from pathlib import Path
+from dotenv import load_dotenv
+
+env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
 
 # Import openai and google_genai as main LLM services
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -15,11 +19,22 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 # langchain prompts, memory, chains...
-from langchain.prompts import PromptTemplate, ChatPromptTemplate
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory, ConversationSummaryBufferMemory
+try:
+    from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
+except ImportError:
+    from langchain.prompts import PromptTemplate, ChatPromptTemplate
 
-from langchain.schema import format_document
+try:
+    from langchain_classic.chains import ConversationalRetrievalChain
+    from langchain_classic.memory import ConversationBufferMemory, ConversationSummaryBufferMemory
+except ImportError:
+    from langchain.chains import ConversationalRetrievalChain
+    from langchain.memory import ConversationBufferMemory, ConversationSummaryBufferMemory
+
+try:
+    from langchain_classic.schema import format_document
+except ImportError:
+    from langchain.schema import format_document
 
 
 # document loaders
@@ -32,10 +47,16 @@ from langchain_community.document_loaders import (
 )
 
 # text_splitter
-from langchain.text_splitter import (
-    RecursiveCharacterTextSplitter,
-    CharacterTextSplitter,
-)
+try:
+    from langchain_text_splitters import (
+        RecursiveCharacterTextSplitter,
+        CharacterTextSplitter,
+    )
+except ImportError:
+    from langchain.text_splitter import (
+        RecursiveCharacterTextSplitter,
+        CharacterTextSplitter,
+    )
 
 # OutputParser
 from langchain_core.output_parsers import StrOutputParser
@@ -44,16 +65,12 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_community.vectorstores import Chroma
 
 # Contextual_compression
-from langchain.retrievers.document_compressors import DocumentCompressorPipeline
-from langchain_community.document_transformers import (
-    EmbeddingsRedundantFilter,
-    LongContextReorder,
-)
-from langchain.retrievers.document_compressors import EmbeddingsFilter
-from langchain.retrievers import ContextualCompressionRetriever
-
-# Cohere
-from langchain.retrievers.document_compressors import CohereRerank
+try:
+    from langchain_classic.retrievers.document_compressors import DocumentCompressorPipeline, EmbeddingsFilter, CohereRerank
+    from langchain_classic.retrievers import ContextualCompressionRetriever
+except ImportError:
+    from langchain.retrievers.document_compressors import DocumentCompressorPipeline, EmbeddingsFilter, CohereRerank
+    from langchain.retrievers import ContextualCompressionRetriever
 from langchain_community.llms import Cohere
 
 # HuggingFace
@@ -96,6 +113,9 @@ LOCAL_VECTOR_STORE_DIR = (
     Path(__file__).resolve().parent.joinpath("data", "vector_stores")
 )
 
+TMP_DIR.mkdir(parents=True, exist_ok=True)
+LOCAL_VECTOR_STORE_DIR.mkdir(parents=True, exist_ok=True)
+
 ####################################################################
 #            Create app interface with streamlit
 ####################################################################
@@ -103,11 +123,12 @@ st.set_page_config(page_title="Chat With Your Data")
 
 st.title("🤖 RAG chatbot")
 
-# API keys
-st.session_state.openai_api_key = ""
-st.session_state.google_api_key = ""
-st.session_state.cohere_api_key = ""
-st.session_state.hf_api_key = ""
+# API keys default helper
+def get_effective_key(session_key, env_var):
+    user_val = st.session_state.get(session_key, "")
+    if user_val and user_val.strip():
+        return user_val.strip()
+    return os.getenv(env_var, "").strip()
 
 
 def expander_model_parameters(
@@ -119,31 +140,23 @@ def expander_model_parameters(
     st.session_state.LLM_provider = LLM_provider
 
     if LLM_provider == "OpenAI":
-        st.session_state.openai_api_key = st.text_input(
+        val = st.text_input(
             text_input_API_key,
             type="password",
-            placeholder="insert your API key",
+            placeholder="insert API key (leave blank to use .env)",
         )
-        st.session_state.google_api_key = ""
-        st.session_state.hf_api_key = ""
+        if val:
+            st.session_state.openai_api_key = val
 
-    if LLM_provider == "Google":
-        st.session_state.google_api_key = st.text_input(
-            text_input_API_key,
-            type="password",
-            placeholder="insert your API key",
-        )
-        st.session_state.openai_api_key = ""
-        st.session_state.hf_api_key = ""
 
     if LLM_provider == "HuggingFace":
-        st.session_state.hf_api_key = st.text_input(
+        val = st.text_input(
             text_input_API_key,
             type="password",
-            placeholder="insert your API key",
+            placeholder="insert API key (leave blank to use .env)",
         )
-        st.session_state.openai_api_key = ""
-        st.session_state.google_api_key = ""
+        if val:
+            st.session_state.hf_api_key = val
 
     with st.expander("**Models and parameters**"):
         st.session_state.selected_model = st.selectbox(
@@ -177,9 +190,17 @@ def sidebar_and_documentChooser():
         )
         st.write("")
 
+        default_index = 0
+        if not get_effective_key("openai_api_key", "OPENAI_API_KEY"):
+            if get_effective_key("google_api_key", "GOOGLE_API_KEY"):
+                default_index = 1
+            elif get_effective_key("hf_api_key", "HUGGINGFACEHUB_API_TOKEN"):
+                default_index = 2
+
         llm_chooser = st.radio(
             "Select provider",
             list_LLM_providers,
+            index=default_index,
             captions=[
                 "[OpenAI pricing page](https://openai.com/pricing)",
                 "Rate limit: 60 requests per minute.",
@@ -203,7 +224,7 @@ def sidebar_and_documentChooser():
             expander_model_parameters(
                 LLM_provider="Google",
                 text_input_API_key="Google API Key - [Get an API key](https://makersuite.google.com/app/apikey)",
-                list_models=["gemini-pro"],
+                list_models=["gemini-3.6-flash", "gemini-2.5-flash", "gemini-3.5-flash"],
             )
         if llm_chooser == list_LLM_providers[2]:
             expander_model_parameters(
@@ -229,16 +250,10 @@ def sidebar_and_documentChooser():
             f"Select retriever type", retrievers
         )
         st.write("")
-        if st.session_state.retriever_type == list_retriever_types[0]:  # Cohere
-            st.session_state.cohere_api_key = st.text_input(
-                "Coher API Key - [Get an API key](https://dashboard.cohere.com/api-keys)",
-                type="password",
-                placeholder="insert your API key",
-            )
 
         st.write("\n\n")
         st.write(
-            f"ℹ _Your {st.session_state.LLM_provider} API key, '{st.session_state.selected_model}' parameters, \
+            f"ℹ _Your '{st.session_state.selected_model}' parameters \
             and {st.session_state.retriever_type} are only considered when loading or creating a vectorstore._"
         )
 
@@ -286,9 +301,9 @@ def sidebar_and_documentChooser():
             # Check inputs
             error_messages = []
             if (
-                not st.session_state.openai_api_key
-                and not st.session_state.google_api_key
-                and not st.session_state.hf_api_key
+                (st.session_state.LLM_provider == "OpenAI" and not get_effective_key("openai_api_key", "OPENAI_API_KEY"))
+                or (st.session_state.LLM_provider == "Google" and not get_effective_key("google_api_key", "GOOGLE_API_KEY"))
+                or (st.session_state.LLM_provider == "HuggingFace" and not get_effective_key("hf_api_key", "HUGGINGFACEHUB_API_TOKEN"))
             ):
                 error_messages.append(
                     f"insert your {st.session_state.LLM_provider} API key"
@@ -296,7 +311,7 @@ def sidebar_and_documentChooser():
 
             if (
                 st.session_state.retriever_type == list_retriever_types[0]
-                and not st.session_state.cohere_api_key
+                and not get_effective_key("cohere_api_key", "COHERE_API_KEY")
             ):
                 error_messages.append(f"insert your Cohere API key")
 
@@ -341,8 +356,8 @@ def sidebar_and_documentChooser():
                                 base_retriever_search_type="similarity",
                                 base_retriever_k=16,
                                 compression_retriever_k=20,
-                                cohere_api_key=st.session_state.cohere_api_key,
-                                cohere_model="rerank-multilingual-v2.0",
+                                cohere_api_key=get_effective_key("cohere_api_key", "COHERE_API_KEY"),
+                                cohere_model="rerank-v3.5",
                                 cohere_top_n=10,
                             )
 
@@ -425,16 +440,16 @@ def split_documents_to_chunks(documents):
 def select_embeddings_model():
     """Select embeddings models: OpenAIEmbeddings or GoogleGenerativeAIEmbeddings."""
     if st.session_state.LLM_provider == "OpenAI":
-        embeddings = OpenAIEmbeddings(api_key=st.session_state.openai_api_key)
+        embeddings = OpenAIEmbeddings(api_key=get_effective_key("openai_api_key", "OPENAI_API_KEY"))
 
     if st.session_state.LLM_provider == "Google":
         embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001", google_api_key=st.session_state.google_api_key
+            model="models/gemini-embedding-001", google_api_key=get_effective_key("google_api_key", "GOOGLE_API_KEY")
         )
 
     if st.session_state.LLM_provider == "HuggingFace":
         embeddings = HuggingFaceInferenceAPIEmbeddings(
-            api_key=st.session_state.hf_api_key, model_name="thenlper/gte-large"
+            api_key=get_effective_key("hf_api_key", "HUGGINGFACEHUB_API_TOKEN"), model_name="thenlper/gte-large"
         )
 
     return embeddings
@@ -448,7 +463,7 @@ def create_retriever(
     base_retriever_k=16,
     compression_retriever_k=20,
     cohere_api_key="",
-    cohere_model="rerank-multilingual-v2.0",
+    cohere_model="rerank-v3.5",
     cohere_top_n=10,
 ):
     """
@@ -577,7 +592,7 @@ def create_compression_retriever(
 
 
 def CohereRerank_retriever(
-    base_retriever, cohere_api_key, cohere_model="rerank-multilingual-v2.0", top_n=10
+    base_retriever, cohere_api_key="", cohere_model="rerank-v3.5", top_n=10
 ):
     """Build a ContextualCompressionRetriever using CohereRerank endpoint to reorder the results
     based on relevance to the query.
@@ -589,8 +604,9 @@ def CohereRerank_retriever(
        top_n: top n results returned by Cohere rerank. default = 10.
     """
 
+    key = cohere_api_key or get_effective_key("cohere_api_key", "COHERE_API_KEY")
     compressor = CohereRerank(
-        cohere_api_key=cohere_api_key, model=cohere_model, top_n=top_n
+        cohere_api_key=key, model=cohere_model, top_n=top_n
     )
 
     retriever_Cohere = ContextualCompressionRetriever(
@@ -609,9 +625,9 @@ def chain_RAG_blocks():
         # Check inputs
         error_messages = []
         if (
-            not st.session_state.openai_api_key
-            and not st.session_state.google_api_key
-            and not st.session_state.hf_api_key
+            (st.session_state.LLM_provider == "OpenAI" and not get_effective_key("openai_api_key", "OPENAI_API_KEY"))
+            or (st.session_state.LLM_provider == "Google" and not get_effective_key("google_api_key", "GOOGLE_API_KEY"))
+            or (st.session_state.LLM_provider == "HuggingFace" and not get_effective_key("hf_api_key", "HUGGINGFACEHUB_API_TOKEN"))
         ):
             error_messages.append(
                 f"insert your {st.session_state.LLM_provider} API key"
@@ -619,7 +635,7 @@ def chain_RAG_blocks():
 
         if (
             st.session_state.retriever_type == list_retriever_types[0]
-            and not st.session_state.cohere_api_key
+            and not get_effective_key("cohere_api_key", "COHERE_API_KEY")
         ):
             error_messages.append(f"insert your Cohere API key")
         if not st.session_state.uploaded_file_list:
@@ -654,7 +670,7 @@ def chain_RAG_blocks():
                             with open(temp_file_path, "wb") as temp_file:
                                 temp_file.write(uploaded_file.read())
                         except Exception as e:
-                            error_message += e
+                            error_message += str(e)
                     if error_message != "":
                         st.warning(f"Errors: {error_message}")
 
@@ -691,8 +707,8 @@ def chain_RAG_blocks():
                             base_retriever_search_type="similarity",
                             base_retriever_k=16,
                             compression_retriever_k=20,
-                            cohere_api_key=st.session_state.cohere_api_key,
-                            cohere_model="rerank-multilingual-v2.0",
+                            cohere_api_key=get_effective_key("cohere_api_key", "COHERE_API_KEY"),
+                            cohere_model="rerank-v3.5",
                             cohere_top_n=10,
                         )
 
@@ -811,36 +827,42 @@ Standalone question:""",
 
     # 4. Instantiate LLMs: standalone_query_generation_llm & response_generation_llm
     if st.session_state.LLM_provider == "OpenAI":
+        key = get_effective_key("openai_api_key", "OPENAI_API_KEY")
         standalone_query_generation_llm = ChatOpenAI(
-            api_key=st.session_state.openai_api_key,
+            api_key=key,
             model=st.session_state.selected_model,
             temperature=0.1,
         )
         response_generation_llm = ChatOpenAI(
-            api_key=st.session_state.openai_api_key,
+            api_key=key,
             model=st.session_state.selected_model,
             temperature=st.session_state.temperature,
             model_kwargs={"top_p": st.session_state.top_p},
         )
     if st.session_state.LLM_provider == "Google":
+        key = get_effective_key("google_api_key", "GOOGLE_API_KEY")
+        google_model = st.session_state.selected_model
+        if not google_model.startswith("models/"):
+            google_model = f"models/{google_model}"
         standalone_query_generation_llm = ChatGoogleGenerativeAI(
-            google_api_key=st.session_state.google_api_key,
-            model=st.session_state.selected_model,
+            google_api_key=key,
+            model=google_model,
             temperature=0.1,
             convert_system_message_to_human=True,
         )
         response_generation_llm = ChatGoogleGenerativeAI(
-            google_api_key=st.session_state.google_api_key,
-            model=st.session_state.selected_model,
+            google_api_key=key,
+            model=google_model,
             temperature=st.session_state.temperature,
             top_p=st.session_state.top_p,
             convert_system_message_to_human=True,
         )
 
     if st.session_state.LLM_provider == "HuggingFace":
+        key = get_effective_key("hf_api_key", "HUGGINGFACEHUB_API_TOKEN")
         standalone_query_generation_llm = HuggingFaceHub(
             repo_id=st.session_state.selected_model,
-            huggingfacehub_api_token=st.session_state.hf_api_key,
+            huggingfacehub_api_token=key,
             model_kwargs={
                 "temperature": 0.1,
                 "top_p": 0.95,
@@ -850,7 +872,7 @@ Standalone question:""",
         )
         response_generation_llm = HuggingFaceHub(
             repo_id=st.session_state.selected_model,
-            huggingfacehub_api_token=st.session_state.hf_api_key,
+            huggingfacehub_api_token=key,
             model_kwargs={
                 "temperature": st.session_state.temperature,
                 "top_p": st.session_state.top_p,
@@ -956,13 +978,16 @@ def chatbot():
 
     if prompt := st.chat_input():
         if (
-            not st.session_state.openai_api_key
-            and not st.session_state.google_api_key
-            and not st.session_state.hf_api_key
+            (st.session_state.LLM_provider == "OpenAI" and not get_effective_key("openai_api_key", "OPENAI_API_KEY"))
+            or (st.session_state.LLM_provider == "Google" and not get_effective_key("google_api_key", "GOOGLE_API_KEY"))
+            or (st.session_state.LLM_provider == "HuggingFace" and not get_effective_key("hf_api_key", "HUGGINGFACEHUB_API_TOKEN"))
         ):
             st.info(
-                f"Please insert your {st.session_state.LLM_provider} API key to continue."
+                f"Please insert your {st.session_state.LLM_provider} API key or choose a different provider to continue."
             )
+            st.stop()
+        if "chain" not in st.session_state or st.session_state.chain is None:
+            st.warning("Please upload documents & create a vectorstore OR open a saved vectorstore first!")
             st.stop()
         with st.spinner("Running..."):
             get_response_from_LLM(prompt=prompt)
