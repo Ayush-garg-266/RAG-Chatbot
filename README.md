@@ -113,51 +113,9 @@ flowchart TD
    * The system constructs a `ConversationalRetrievalChain` combining the vectorstore retriever, chat history (`ConversationBufferMemory`), and response LLM (`gemini-3.6-flash`).
    * You can now ask questions in the chat window, and the chatbot will answer accurately using context retrieved from your documents!
 
----
+##  Author
 
-## Blog post <a name="blog_post"></a>
-
-I wrote a blog post about this project. You can find it [here](https://medium.com/@alaeddine.grine/rag-chatbot-powered-by-langchain-openai-google-generative-ai-and-hugging-face-apis-6a9b9d7d59db)
-
----
-
-## How Vectorstore Works (Under the Hood) <a name="vectorstore_explanation"></a>
-
-### 1. High-Dimensional Vector Embeddings
-A **Vectorstore** (or Vector Database) converts unstructured text (PDFs, Word docs, CSVs, TXT files) into high-dimensional numerical vectors using an Embedding Model (e.g., `models/gemini-embedding-001`).
-
-* Each text chunk is mapped to a vector array of numbers (e.g., 768 or 3072 dimensions).
-* Concepts with similar meanings are positioned close to each other in vector space, allowing the system to understand semantic meaning (e.g., `"revenue"` and `"earnings"` will have high vector similarity even though they are different words).
-
-### 2. Chroma DB Storage Structure
-In this application, **Chroma DB** is used as the local persistent vector database. Each vector store folder created under `data/vector_stores/<Vectorstore_name>/` contains:
-
-* **Vector Index**: An optimized HNSW (Hierarchical Navigable Small World) index for lightning-fast Nearest Neighbor search.
-* **Document Chunks**: The original text chunks associated with each embedding vector.
-* **Metadata Store**: Extra context attributes attached to each chunk, such as `source` (filename) and `page` number.
-
-### 3. Query & Answer Generation Loop
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant Streamlit UI
-    participant EmbeddingModel as Embedding Model
-    participant ChromaDB as Chroma VectorDB
-    participant Reranker as Cohere Reranker
-    participant LLM as LLM (Gemini 3.6 Flash)
-
-    User->>Streamlit UI: Types question e.g. "What is the key takeaway?"
-    Streamlit UI->>EmbeddingModel: Pass question string
-    EmbeddingModel-->>Streamlit UI: Return question vector array
-    Streamlit UI->>ChromaDB: Query vector index (Similarity Search Top K=16)
-    ChromaDB-->>Streamlit UI: Return top 16 matching document chunks
-    Streamlit UI->>Reranker: Re-score top 16 chunks with rerank-v3.5
-    Reranker-->>Streamlit UI: Return top 10 most relevant chunks
-    Streamlit UI->>LLM: Pass question + top 10 chunks as context prompt
-    LLM-->>Streamlit UI: Stream generated grounded answer + source pages
-    Streamlit UI-->>User: Render answer and expander with source documents
-```
+Built by **Ayush Garg** — Data Science & AI Engineer.  
+[LinkedIn](https://www.linkedin.com/in/ayush-garg02) · [Email](mailto:ayush06804@gmail.com) · [GitHub](https://github.com/Ayush-garg-266/RAG-Chatbot)
 
 
