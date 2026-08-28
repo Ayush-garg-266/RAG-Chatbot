@@ -284,64 +284,53 @@ def sidebar_and_documentChooser():
             pass
 
     with tab_open_vectorstore:
-        # Open a saved Vectorstore
-        # https://github.com/streamlit/streamlit/issues/1019
-        st.write("Please select a Vectorstore:")
-        import tkinter as tk
-        from tkinter import filedialog
-
-        clicked = st.button("Vectorstore chooser")
-        root = tk.Tk()
-        root.withdraw()
-        root.wm_attributes("-topmost", 1)  # Make dialog appear on top of other windows
-
+        st.write("Please select a saved Vectorstore:")
+        LOCAL_VECTOR_STORE_DIR.mkdir(parents=True, exist_ok=True)
+        saved_vectorstores = [
+            d.name for d in LOCAL_VECTOR_STORE_DIR.iterdir() if d.is_dir()
+        ]
         st.session_state.selected_vectorstore_name = ""
 
-        if clicked:
-            # Check inputs
-            error_messages = []
-            if (
-                (st.session_state.LLM_provider == "OpenAI" and not get_effective_key("openai_api_key", "OPENAI_API_KEY"))
-                or (st.session_state.LLM_provider == "Google" and not get_effective_key("google_api_key", "GOOGLE_API_KEY"))
-                or (st.session_state.LLM_provider == "HuggingFace" and not get_effective_key("hf_api_key", "HUGGINGFACEHUB_API_TOKEN"))
-            ):
-                error_messages.append(
-                    f"insert your {st.session_state.LLM_provider} API key"
-                )
+        if saved_vectorstores:
+            selected_vs = st.selectbox("Select a Vectorstore folder:", saved_vectorstores)
+            clicked = st.button("Load Vectorstore")
+            if clicked:
+                # Check inputs
+                error_messages = []
+                if (
+                    (st.session_state.LLM_provider == "OpenAI" and not get_effective_key("openai_api_key", "OPENAI_API_KEY"))
+                    or (st.session_state.LLM_provider == "Google" and not get_effective_key("google_api_key", "GOOGLE_API_KEY"))
+                    or (st.session_state.LLM_provider == "HuggingFace" and not get_effective_key("hf_api_key", "HUGGINGFACEHUB_API_TOKEN"))
+                ):
+                    error_messages.append(
+                        f"insert your {st.session_state.LLM_provider} API key"
+                    )
 
-            if (
-                st.session_state.retriever_type == list_retriever_types[0]
-                and not get_effective_key("cohere_api_key", "COHERE_API_KEY")
-            ):
-                error_messages.append(f"insert your Cohere API key")
+                if (
+                    st.session_state.retriever_type == list_retriever_types[0]
+                    and not get_effective_key("cohere_api_key", "COHERE_API_KEY")
+                ):
+                    error_messages.append(f"insert your Cohere API key")
 
-            if len(error_messages) == 1:
-                st.session_state.error_message = "Please " + error_messages[0] + "."
-                st.warning(st.session_state.error_message)
-            elif len(error_messages) > 1:
-                st.session_state.error_message = (
-                    "Please "
-                    + ", ".join(error_messages[:-1])
-                    + ", and "
-                    + error_messages[-1]
-                    + "."
-                )
-                st.warning(st.session_state.error_message)
-
-            # if API keys are inserted, start loading Chroma index, then create retriever and ConversationalRetrievalChain
-            else:
-                selected_vectorstore_path = filedialog.askdirectory(master=root)
-
-                if selected_vectorstore_path == "":
-                    st.info("Please select a valid path.")
+                if len(error_messages) == 1:
+                    st.session_state.error_message = "Please " + error_messages[0] + "."
+                    st.warning(st.session_state.error_message)
+                elif len(error_messages) > 1:
+                    st.session_state.error_message = (
+                        "Please "
+                        + ", ".join(error_messages[:-1])
+                        + ", and "
+                        + error_messages[-1]
+                        + "."
+                    )
+                    st.warning(st.session_state.error_message)
 
                 else:
+                    selected_vectorstore_path = (LOCAL_VECTOR_STORE_DIR / selected_vs).as_posix()
                     with st.spinner("Loading vectorstore..."):
-                        st.session_state.selected_vectorstore_name = (
-                            selected_vectorstore_path.split("/")[-1]
-                        )
+                        st.session_state.selected_vectorstore_name = selected_vs
                         try:
-                            # 1. load Chroma vectorestore
+                            # 1. load Chroma vectorstore
                             embeddings = select_embeddings_model()
                             st.session_state.vector_store = Chroma(
                                 embedding_function=embeddings,
@@ -380,6 +369,8 @@ def sidebar_and_documentChooser():
 
                         except Exception as e:
                             st.error(e)
+        else:
+            st.info("No saved vectorstores found in data/vector_stores/. Please create a new vectorstore in the first tab.")
 
 
 ####################################################################
